@@ -1,0 +1,518 @@
+# openclaw AWS 中国区部署指南
+
+> 在 AWS 中国区（北京/宁夏）部署 [openclaw](https://github.com/openclaw/openclaw) 个人 AI 助手。使用 SiliconFlow 等 OpenAI 兼容 API，Graviton ARM 处理器，一键 CloudFormation 部署。
+
+[English](README.md) | [简体中文（全球区）](README_CN.md) | **中国区部署**
+
+## 为什么需要中国区专用模板？
+
+AWS 中国区（由光环新网和西云数据运营）与全球区有以下差异：
+
+| 差异 | 全球区 | 中国区 |
+|------|--------|--------|
+| **LLM 服务** | Amazon Bedrock（内置） | ❌ 不可用，需使用第三方 API |
+| **账号体系** | 全球 AWS 账号 | 独立的中国区账号 |
+| **控制台地址** | `console.aws.amazon.com` | `console.amazonaws.cn` |
+| **ARN 格式** | `arn:aws:` | `arn:aws-cn:` |
+| **网络环境** | 直连全球 | 需使用国内镜像加速 |
+
+本模板（`clawdbot-china.yaml`）专为中国区设计，默认使用 [SiliconFlow](https://siliconflow.cn/) 作为 LLM 提供商，内置国内镜像加速（阿里云 Docker 镜像、npmmirror），确保部署过程流畅。
+
+## 支持的 LLM 模型
+
+默认使用 SiliconFlow，也兼容任何 OpenAI API 格式的服务商：
+
+| 模型 | 提供商 | 特点 |
+|------|--------|------|
+| deepseek-ai/DeepSeek-V3（默认） | SiliconFlow | 综合能力强，性价比高 |
+| deepseek-ai/DeepSeek-R1 | SiliconFlow | 推理能力突出 |
+| Qwen/Qwen2.5-72B-Instruct | SiliconFlow | 阿里千问，中文能力强 |
+| Pro/deepseek-ai/DeepSeek-V3 | SiliconFlow | 专业版，更快响应 |
+
+> 你可以使用任何 OpenAI 兼容 API（如智谱 AI、百川、Moonshot 等），只需修改 `LLMApiBaseUrl` 和 `LLMApiKey`。
+
+## 支持的区域
+
+| 区域 | 区域代码 | 运营商 |
+|------|----------|--------|
+| 北京 | cn-north-1 | 光环新网 |
+| 宁夏 | cn-northwest-1 | 西云数据 |
+
+## 前置条件
+
+### 1. AWS 中国区账号
+
+中国区账号需要单独申请：[AWS 中国区注册](https://www.amazonaws.cn/sign-up/)
+
+### 2. 安装 AWS CLI
+
+```bash
+# macOS
+curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
+sudo installer -pkg AWSCLIV2.pkg -target /
+
+# Linux (x86_64)
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip && sudo ./aws/install
+
+# Linux (ARM)
+curl "https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip && sudo ./aws/install
+```
+
+### 3. 配置中国区 AWS CLI
+
+```bash
+aws configure --profile china
+# AWS Access Key ID: <你的中国区 Access Key>
+# AWS Secret Access Key: <你的中国区 Secret Key>
+# Default region name: cn-north-1
+# Default output format: json
+```
+
+验证配置：
+```bash
+aws --profile china --region cn-north-1 sts get-caller-identity
+```
+
+### 4. 安装 SSM Session Manager 插件
+
+SSM 是访问 EC2 实例的推荐方式（无需开放 SSH 端口）。
+
+**macOS (ARM):**
+```bash
+curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/mac_arm64/session-manager-plugin.pkg" -o "session-manager-plugin.pkg"
+sudo installer -pkg session-manager-plugin.pkg -target /
+```
+
+**macOS (x86):**
+```bash
+curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/mac/session-manager-plugin.pkg" -o "session-manager-plugin.pkg"
+sudo installer -pkg session-manager-plugin.pkg -target /
+```
+
+**Linux (64-bit):**
+```bash
+curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o "session-manager-plugin.deb"
+sudo dpkg -i session-manager-plugin.deb
+```
+
+**Windows:**
+
+下载安装包：https://docs.amazonaws.cn/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
+
+### 5. 获取 LLM API Key
+
+前往 [SiliconFlow](https://cloud.siliconflow.cn/) 注册并获取 API Key（以 `sk-` 开头）。
+
+## 快速开始
+
+### 一键部署（控制台 - 推荐，约 10 分钟）
+
+1. 登录 [AWS 中国区控制台](https://console.amazonaws.cn/)
+2. 进入 CloudFormation 服务
+3. 点击 **创建堆栈** → **上传模板文件** → 选择 `clawdbot-china.yaml`
+4. 填写参数：
+
+| 参数 | 说明 | 建议值 |
+|------|------|--------|
+| **Stack name** | 堆栈名称 | `openclaw-china` |
+| **LLM API Key** | SiliconFlow API 密钥 | `sk-xxxxxxxx` |
+| **LLM API Base URL** | API 地址 | 默认即可（SiliconFlow） |
+| **LLM Model ID** | 模型名称 | 默认 DeepSeek-V3 |
+| **EC2 Instance Type** | 实例类型 | `c6g.large`（推荐） |
+| **Use Existing VPC?** | 使用已有 VPC | `false`（新建）或 `true`（使用已有） |
+| **Existing VPC ID** | 已有 VPC（下拉选择） | 使用已有 VPC 时选择 |
+| **Existing Public Subnet ID** | 已有公有子网（下拉选择） | 使用已有 VPC 时选择 |
+| **Existing Private Subnet ID** | 已有私有子网（下拉选择） | 使用已有 VPC 时选择 |
+| **EC2 Key Pair Name** | SSH 密钥对（可选） | 输入 `none` 跳过 |
+| **Create S3 Bucket?** | 创建 S3 存储桶 | `true`（推荐） |
+
+> **VPC/子网下拉选择器**：当 `Use Existing VPC?` 设为 `true` 时，VPC 和子网参数会以下拉菜单形式展示你账号中的已有资源，方便直接选择。设为 `false` 时（新建 VPC），随意选择一个值即可——它会被忽略。
+
+5. 勾选 **我确认，AWS CloudFormation 可能会创建 IAM 资源**
+6. 点击 **创建堆栈**
+7. 等待约 10 分钟，状态变为 `CREATE_COMPLETE`
+
+### CLI 部署
+
+#### 新建 VPC 部署（推荐新手）
+
+```bash
+aws --profile china --region cn-north-1 cloudformation create-stack \
+  --stack-name openclaw-china \
+  --template-body file://clawdbot-china.yaml \
+  --parameters \
+    ParameterKey=LLMApiKey,ParameterValue=sk-你的API密钥 \
+  --capabilities CAPABILITY_IAM
+
+# 等待完成（约 10 分钟）
+aws --profile china --region cn-north-1 cloudformation wait stack-create-complete \
+  --stack-name openclaw-china
+```
+
+#### 使用已有 VPC 部署
+
+```bash
+aws --profile china --region cn-north-1 cloudformation create-stack \
+  --stack-name openclaw-china \
+  --template-body file://clawdbot-china.yaml \
+  --parameters \
+    ParameterKey=LLMApiKey,ParameterValue=sk-你的API密钥 \
+    ParameterKey=UseExistingVPC,ParameterValue=true \
+    ParameterKey=ExistingVPCId,ParameterValue=vpc-xxxxxxxxx \
+    ParameterKey=ExistingPublicSubnetId,ParameterValue=subnet-xxxxxxxxx \
+    ParameterKey=ExistingPrivateSubnetId,ParameterValue=subnet-xxxxxxxxx \
+  --capabilities CAPABILITY_IAM
+
+aws --profile china --region cn-north-1 cloudformation wait stack-create-complete \
+  --stack-name openclaw-china
+```
+
+> **使用已有 VPC 的要求**：
+> - VPC 必须启用 **DNS 主机名**和 **DNS 解析**
+> - 公有子网必须启用**自动分配公有 IP**
+> - 公有子网必须有通往 Internet Gateway 的路由
+
+## 部署后访问
+
+### 第 1 步：查看 CloudFormation 输出
+
+```bash
+aws --profile china --region cn-north-1 cloudformation describe-stacks \
+  --stack-name openclaw-china \
+  --query 'Stacks[0].Outputs' --output table
+```
+
+你会看到 4 个关键输出：
+- `Step1InstallSSMPlugin` — SSM 插件安装链接
+- `Step2PortForwarding` — 端口转发命令
+- `Step3AccessURL` — 浏览器访问 URL（含 token）
+- `Step4StartChatting` — 开始使用
+
+### 第 2 步：启动端口转发
+
+复制 `Step2PortForwarding` 输出的命令，在**本地电脑**运行：
+
+```bash
+aws --profile china ssm start-session \
+  --target i-xxxxxxxxxxxxxxxxx \
+  --region cn-north-1 \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["18789"],"localPortNumber":["18789"]}'
+```
+
+> 保持这个终端窗口打开！关闭会断开连接。
+
+### 第 3 步：打开浏览器
+
+复制 `Step3AccessURL` 输出的 URL，在浏览器中打开：
+
+```
+http://localhost:18789/?token=你的token
+```
+
+### 第 4 步：连接消息平台
+
+在 Web UI 中连接 WhatsApp、Telegram、Discord 或 Slack：
+
+| 平台 | 操作 |
+|------|------|
+| **WhatsApp** | Channels → Add → WhatsApp → 手机扫码 |
+| **Telegram** | 先用 @BotFather 创建 Bot → 获取 token → 配置 |
+| **Discord** | Developer Portal 创建 Bot → 获取 token → 配置 |
+| **Slack** | Slack API 创建 App → Bot Token → 配置 |
+
+详细指南：https://docs.openclaw.ai/channels/
+
+## 参数详解
+
+### LLM 配置
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `LLMApiBaseUrl` | String | `https://api.siliconflow.cn/v1` | OpenAI 兼容 API 地址 |
+| `LLMModel` | String | `deepseek-ai/DeepSeek-V3` | 模型 ID |
+| `LLMApiKey` | String | （必填） | API 密钥，存储在 SSM Parameter Store |
+
+### 计算配置
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `InstanceType` | String | `c6g.large` | EC2 实例类型 |
+| `VolumeSize` | Number | `30` | EBS 卷大小（GB），范围 20-500 |
+| `VolumeType` | String | `gp3` | EBS 卷类型 |
+| `KeyPairName` | String | `none` | SSH 密钥对，`none` 表示不使用 |
+
+**实例类型推荐：**
+
+| 类型 | 架构 | 月费（约） | 适用场景 |
+|------|------|------------|----------|
+| `t4g.small` | ARM (Graviton) | ~80 CNY | 个人轻度使用 |
+| `t4g.medium` | ARM (Graviton) | ~160 CNY | 个人日常使用 |
+| `c6g.large`（默认） | ARM (Graviton) | ~230 CNY | 推荐，稳定性能 |
+| `c7g.large` | ARM (Graviton) | ~250 CNY | 最新 Graviton |
+| `t3.medium` | x86 | ~200 CNY | x86 兼容需求 |
+| `c5.large` | x86 | ~280 CNY | x86 稳定性能 |
+
+> 推荐使用 Graviton（ARM）实例：性价比比 x86 高 20-40%。
+
+### 网络配置
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `UseExistingVPC` | String | `false` | 是否使用已有 VPC |
+| `ExistingVPCId` | AWS::EC2::VPC::Id | （控制台下拉选择） | 已有 VPC ID |
+| `ExistingPublicSubnetId` | AWS::EC2::Subnet::Id | （控制台下拉选择） | 已有公有子网 ID |
+| `ExistingPrivateSubnetId` | AWS::EC2::Subnet::Id | （控制台下拉选择） | 已有私有子网 ID |
+| `VpcCidr` | String | `10.0.0.0/16` | 新建 VPC 的 CIDR |
+| `CreateVPCEndpoints` | String | `true` | 创建 SSM VPC 端点 |
+| `AllowedSSHCIDR` | String | （空） | SSH 访问 CIDR，留空不开放 |
+
+### S3 配置
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `CreateS3Bucket` | String | `true` | 创建 S3 存储桶 |
+| `InstallS3FilesSkill` | String | `true` | 安装 S3 Files Skill |
+
+## 架构
+
+```
+你的电脑
+    │ AWS CLI + SSM Plugin
+    ▼
+SSM Service（AWS 中国区内网）
+    │ 端口转发（localhost:18789）
+    ▼
+EC2 实例（Ubuntu 24.04, Graviton ARM）
+    ├── openclaw（Node.js 应用）
+    ├── Gateway Web UI（端口 18789，仅本地）
+    ├── Docker（沙箱隔离）
+    └── SSM Agent（安全远程访问）
+    │
+    ▼
+SiliconFlow API（或其他 OpenAI 兼容 API）
+    ├── DeepSeek-V3（默认）
+    ├── DeepSeek-R1
+    ├── Qwen2.5-72B
+    └── 其他模型...
+```
+
+**创建的 AWS 资源：**
+
+| 类别 | 资源 |
+|------|------|
+| 网络 | VPC、Internet Gateway、公有/私有子网、路由表（新建 VPC 时） |
+| VPC 端点 | SSM、SSM Messages、EC2 Messages（可选） |
+| IAM | 角色（SSM + CloudWatch + SSM 参数存储）、实例配置文件 |
+| 安全 | EC2 安全组、VPC 端点安全组（可选） |
+| 计算 | EC2 实例（Ubuntu 24.04） |
+| 存储 | S3 存储桶（可选，用于 Files Skill） |
+| 编排 | CloudFormation WaitCondition（20 分钟超时） |
+
+## 月度成本估算（CNY）
+
+| 服务 | 配置 | 月费（约） |
+|------|------|------------|
+| EC2 (c6g.large, Graviton) | 2 vCPU, 4GB RAM | 150-230 CNY |
+| EBS (gp3) | 30GB | ~18 CNY |
+| VPC 端点（可选） | 3 个端点 | ~150 CNY |
+| S3 存储桶 | < 1GB 通常 | < 1 CNY |
+| **基础设施小计** | | **170-400 CNY** |
+| LLM API（SiliconFlow） | 按量付费 | 视使用量而定 |
+
+### 成本优化建议
+
+- **关闭 VPC 端点**：设 `CreateVPCEndpoints=false` 节省 ~150 CNY/月（SSM 仍可通过公网使用）
+- **使用 Graviton 实例**：比 x86 便宜 20-40%
+- **使用小实例**：`t4g.small`（~80 CNY/月）足够个人使用
+- **选择经济模型**：DeepSeek-V3 性价比最高
+
+## 常用操作
+
+### 查看安装日志
+
+```bash
+# 通过 SSM 连接实例
+aws --profile china ssm start-session --target i-xxxxxxxxx --region cn-north-1
+
+# 切换到 ubuntu 用户
+sudo su - ubuntu
+
+# 查看安装日志
+tail -100 /var/log/openclaw-setup.log
+
+# 查看安装状态
+cat ~/.openclaw/setup_status.txt
+```
+
+### 查看 Gateway 服务状态
+
+```bash
+XDG_RUNTIME_DIR=/run/user/1000 systemctl --user status openclaw-gateway
+```
+
+### 重启 Gateway
+
+```bash
+XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart openclaw-gateway
+```
+
+### 切换模型
+
+```bash
+# 编辑配置
+nano ~/.openclaw/openclaw.json
+
+# 修改 models.providers.maas.models[0].id 为新模型 ID
+# 修改 agents.defaults.model.primary 为 "maas/新模型ID"
+
+# 重启服务
+XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart openclaw-gateway
+```
+
+### 切换 LLM 提供商
+
+编辑 `~/.openclaw/openclaw.json`，修改：
+- `models.providers.maas.baseUrl` — 新的 API 地址
+- `models.providers.maas.apiKey` — 新的 API 密钥
+- `models.providers.maas.models[0].id` — 新的模型 ID
+
+### 更新 openclaw
+
+```bash
+sudo su - ubuntu
+npm update -g openclaw
+XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart openclaw-gateway
+openclaw --version
+```
+
+### 更新堆栈
+
+```bash
+aws --profile china --region cn-north-1 cloudformation update-stack \
+  --stack-name openclaw-china \
+  --template-body file://clawdbot-china.yaml \
+  --parameters \
+    ParameterKey=LLMApiKey,UsePreviousValue=true \
+    ParameterKey=UseExistingVPC,UsePreviousValue=true \
+    ParameterKey=ExistingVPCId,UsePreviousValue=true \
+    ParameterKey=ExistingPublicSubnetId,UsePreviousValue=true \
+    ParameterKey=ExistingPrivateSubnetId,UsePreviousValue=true \
+  --capabilities CAPABILITY_IAM
+```
+
+## 故障排查
+
+### WaitCondition timed out
+
+安装过程超时（20 分钟）。常见原因：
+
+1. **网络不通**：子网没有 Internet Gateway 或路由配置错误
+   ```bash
+   # 检查实例是否能访问外网
+   curl -s --max-time 5 https://api.siliconflow.cn/v1/models
+   ```
+
+2. **包下载失败**：国内镜像不可用
+   ```bash
+   # 查看安装日志中的错误
+   sudo grep -i "error\|fail" /var/log/openclaw-setup.log
+   ```
+
+3. **实例启动失败**：检查 EC2 控制台系统日志
+
+### SSM 无法连接
+
+```bash
+# 确认实例正在运行
+aws --profile china --region cn-north-1 ec2 describe-instances \
+  --instance-ids i-xxxxxxxxx \
+  --query 'Reservations[0].Instances[0].State.Name'
+
+# 确认 SSM Agent 已注册
+aws --profile china --region cn-north-1 ssm describe-instance-information \
+  --filters "Key=InstanceIds,Values=i-xxxxxxxxx"
+```
+
+如果 SSM Agent 未注册：
+- 检查实例 IAM 角色是否包含 `AmazonSSMManagedInstanceCore` 策略
+- 检查 VPC 端点或公网访问是否可用
+
+### LLM API 错误
+
+```bash
+# 测试 API 连接
+curl -s https://api.siliconflow.cn/v1/models \
+  -H "Authorization: Bearer sk-你的密钥" | head -20
+
+# 测试模型调用
+curl -s https://api.siliconflow.cn/v1/chat/completions \
+  -H "Authorization: Bearer sk-你的密钥" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"deepseek-ai/DeepSeek-V3","messages":[{"role":"user","content":"你好"}],"max_tokens":50}'
+```
+
+### Gateway 未启动
+
+```bash
+# 检查端口是否监听
+ss -tlnp | grep 18789
+
+# 查看 Gateway 日志
+XDG_RUNTIME_DIR=/run/user/1000 journalctl --user -u openclaw-gateway --no-pager -n 50
+
+# 手动启动
+XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus openclaw gateway
+```
+
+## 清理资源
+
+### 删除堆栈
+
+```bash
+aws --profile china --region cn-north-1 cloudformation delete-stack \
+  --stack-name openclaw-china
+
+aws --profile china --region cn-north-1 cloudformation wait stack-delete-complete \
+  --stack-name openclaw-china
+```
+
+> 删除堆栈会移除所有创建的资源（VPC、EC2、IAM 角色、S3 存储桶等）。如果使用的是已有 VPC，VPC 和子网不会被删除。
+
+## 安全特性
+
+- **SSM Session Manager**：无需公网 SSH 端口，自动会话日志
+- **API 密钥安全存储**：LLM API 密钥存储在 SSM Parameter Store（加密）
+- **Gateway Token**：部署时自动生成（`openssl rand -hex 24`），存储在 SSM Parameter Store
+- **VPC 端点**：SSM 流量通过 AWS 内网，不经过公网
+- **最小权限 IAM**：仅授予 SSM、CloudWatch 和 SSM 参数存储权限
+- **S3 存储桶安全**：阻止所有公共访问、启用版本控制、AES256 加密
+
+## 与全球区版本对比
+
+| | 全球区（Bedrock） | 中国区（SiliconFlow） |
+|--|-------------------|----------------------|
+| **LLM 服务** | Amazon Bedrock（内置） | SiliconFlow 等第三方 API |
+| **认证方式** | IAM Role（无密钥） | API Key（SSM 加密存储） |
+| **可选模型** | Nova、Claude、DeepSeek、Llama、Kimi | DeepSeek、Qwen 等 |
+| **模板文件** | `clawdbot-bedrock.yaml` | `clawdbot-china.yaml` |
+| **部署区域** | us-east-1、us-west-2、eu-west-1、ap-northeast-1 | cn-north-1、cn-northwest-1 |
+| **网络加速** | 不需要 | 阿里云 Docker 镜像、npmmirror |
+| **月费（基础设施）** | ~$84 (USD) | ~170-400 CNY |
+
+## 资源链接
+
+- [openclaw 文档](https://docs.openclaw.ai/)
+- [openclaw GitHub](https://github.com/openclaw/openclaw)
+- [SiliconFlow 控制台](https://cloud.siliconflow.cn/)
+- [AWS 中国区文档](https://docs.amazonaws.cn/)
+- [SSM Session Manager（中国区）](https://docs.amazonaws.cn/systems-manager/latest/userguide/session-manager.html)
+- [本项目 GitHub Issues](https://github.com/aws-samples/sample-OpenClaw-on-AWS-with-Bedrock/issues)
+
+---
+
+**Built by builder + Claude** 🦞
+
+在你控制的 AWS 中国区基础设施上部署个人 AI 助手 🦞
