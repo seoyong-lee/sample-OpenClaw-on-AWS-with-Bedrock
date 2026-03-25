@@ -1,7 +1,8 @@
 import { ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { MessageSquare, User, BarChart3, Puzzle, FileText, LogOut } from 'lucide-react';
+import { MessageSquare, User, BarChart3, Puzzle, FileText, LogOut, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import ClawForgeLogo from './ClawForgeLogo';
 import clsx from 'clsx';
 
@@ -15,6 +16,7 @@ const NAV = [
 
 export default function PortalLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -50,8 +52,18 @@ export default function PortalLayout({ children }: { children: ReactNode }) {
           ))}
         </nav>
 
-        {/* User + Logout */}
+        {/* Theme + User + Logout */}
         <div className="border-t border-dark-border p-3">
+          <button
+            onClick={toggleTheme}
+            className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 mb-2 text-text-muted hover:bg-dark-hover hover:text-text-primary transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+          >
+            <span className="relative w-5 h-5">
+              <Sun size={18} className={clsx('absolute inset-0 transition-all duration-500', theme === 'light' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 rotate-90 scale-50')} />
+              <Moon size={18} className={clsx('absolute inset-0 transition-all duration-500', theme === 'dark' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50')} />
+            </span>
+            <span className="text-sm">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+          </button>
           <div className="flex items-center gap-3 rounded-lg px-3 py-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20 text-blue-400 text-sm font-medium">
               {user?.name?.[0] || 'U'}

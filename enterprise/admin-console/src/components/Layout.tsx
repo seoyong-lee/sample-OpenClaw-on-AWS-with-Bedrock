@@ -4,9 +4,11 @@ import {
   LayoutDashboard, Building2, Users, Bot, Puzzle, Activity,
   Shield, DollarSign, Gamepad2, Settings, ChevronDown, ChevronRight,
   Bell, Search, Menu, X, CheckCircle, LogOut, User, FolderOpen, BookOpen,
+  Sun, Moon,
 } from 'lucide-react';
 import { useApprovals, useAlertRules } from '../hooks/useApi';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import ClawForgeLogo from './ClawForgeLogo';
 import clsx from 'clsx';
 
@@ -117,6 +119,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const { data: approvalsData } = useApprovals();
   const { data: alertRules = [] } = useAlertRules();
   const { user, logout } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const pendingApprovals = approvalsData?.pending?.length || 0;
   const activeAlerts = alertRules.filter(a => a.status === 'warning').length;
   const notifCount = pendingApprovals + activeAlerts;
@@ -178,11 +181,22 @@ export default function Layout({ children }: { children: ReactNode }) {
           ))}
         </nav>
 
-        {/* Collapse toggle */}
-        <div className="hidden border-t border-dark-border p-3 lg:block">
+        {/* Theme toggle + Collapse */}
+        <div className="hidden border-t border-dark-border p-3 lg:flex flex-col gap-2">
+          <button
+            onClick={toggleTheme}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl py-2.5 text-text-muted hover:bg-dark-hover hover:text-text-primary transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] group"
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            <span className="relative w-5 h-5">
+              <Sun size={18} className={clsx('absolute inset-0 transition-all duration-500', theme === 'light' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 rotate-90 scale-50')} />
+              <Moon size={18} className={clsx('absolute inset-0 transition-all duration-500', theme === 'dark' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50')} />
+            </span>
+            {sidebarOpen && <span className="text-sm">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
+          </button>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="flex w-full items-center justify-center rounded-lg py-2 text-text-muted hover:bg-dark-hover hover:text-text-primary transition-colors"
+            className="flex w-full items-center justify-center rounded-2xl py-2 text-text-muted hover:bg-dark-hover hover:text-text-primary transition-colors"
           >
             {sidebarOpen ? <ChevronRight size={18} /> : <Menu size={18} />}
           </button>
