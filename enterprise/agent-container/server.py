@@ -388,49 +388,144 @@ def _ensure_workspace_assembled(tenant_id: str) -> None:
         except IOError:
             pass
 
-        # 5. Dynamic model config: read from DynamoDB and update openclaw.json
-        # This allows Admin Console to change the model without redeploying the Runtime
+        # 5. Dynamic agent config: read from DynamoDB and update openclaw.json
+        # Hierarchy: employee override > position override > global default
+        # Covers: model, memory compaction, context window, language preference
         try:
             import boto3 as _b3_model
             ddb = _b3_model.resource("dynamodb", region_name=DYNAMODB_REGION)
             table = ddb.Table(DYNAMODB_TABLE)
-            config_resp = table.get_item(Key={"PK": "ORG#acme", "SK": "CONFIG#model"})
-            if "Item" in config_resp:
-                model_config = config_resp["Item"]
-                # Check for position-specific override first
-                pos_id = ""
-                try:
-                    ssm_client = _b3_model.client("ssm", region_name=AWS_REGION_RUNTIME)
-                    pos_resp = ssm_client.get_parameter(
-                        Name=f"/openclaw/{STACK_NAME}/tenants/{base_id}/position")
-                    pos_id = pos_resp["Parameter"]["Value"]
-                except Exception:
-                    pass
 
-                overrides = model_config.get("positionOverrides", {})
-                if pos_id and pos_id in overrides:
-                    new_model_id = overrides[pos_id].get("modelId", "")
-                    if new_model_id:
-                        logger.info("Position model override: %s → %s", pos_id, new_model_id)
+            # Read position for this employee
+            pos_id = ""
+            try:
+                ssm_client = _b3_model.client("ssm", region_name=AWS_REGION_RUNTIME)
+                pos_resp = ssm_client.get_parameter(
+                    Name=f"/openclaw/{STACK_NAME}/tenants/{base_id}/position")
+                pos_id = pos_resp["Parameter"]["Value"]
+            except Exception:
+                pass
+
+            # --- Model ---
+            model_config_resp = table.get_item(Key={"PK": "ORG#acme", "SK": "CONFIG#model"})
+            if "Item" in model_config_resp:
+                mc = model_config_resp["Item"]
+                emp_model_overrides = mc.get("employeeOverrides", {})
+                pos_model_overrides = mc.get("positionOverrides", {})
+
+                if base_id in emp_model_overrides:
+                    new_model_id = emp_model_overrides[base_id].get("modelId", "")
+                    logger.info("Employee model override: %s → %s", base_id, new_model_id)
+                elif pos_id and pos_id in pos_model_overrides:
+                    new_model_id = pos_model_overrides[pos_id].get("modelId", "")
+                    logger.info("Position model override: %s → %s", pos_id, new_model_id)
                 else:
-                    new_model_id = model_config.get("default", {}).get("modelId", "")
+                    new_model_id = mc.get("default", {}).get("modelId", "")
 
                 if new_model_id:
-                    # Update openclaw.json with the new model ID
                     oc_config_path = os.path.expanduser("~/.openclaw/openclaw.json")
                     if os.path.isfile(oc_config_path):
                         with open(oc_config_path) as f:
                             oc_config = json.load(f)
-                        # Update model references
                         old_model = os.environ.get("BEDROCK_MODEL_ID", "global.amazon.nova-2-lite-v1:0")
                         oc_json_str = json.dumps(oc_config)
                         oc_json_str = oc_json_str.replace(old_model, new_model_id)
                         with open(oc_config_path, "w") as f:
                             f.write(oc_json_str)
                         os.environ["BEDROCK_MODEL_ID"] = new_model_id
-                        logger.info("Model updated to %s (from DynamoDB CONFIG#model)", new_model_id)
+                        logger.info("Model updated to %s", new_model_id)
+
+            # --- Agent Config (compaction, context, language) ---
+            agent_cfg_resp = table.get_item(Key={"PK": "ORG#acme", "SK": "CONFIG#agent-config"})
+            if "Item" in agent_cfg_resp:
+                agent_cfg = agent_cfg_resp["Item"]
+                emp_cfg  = agent_cfg.get("employeeConfig", {}).get(base_id, {})
+                pos_cfg  = agent_cfg.get("positionConfig", {}).get(pos_id, {}) if pos_id else {}
+                eff_cfg  = {**pos_cfg, **emp_cfg}  # employee wins over position
+
+                oc_config_path = os.path.expanduser("~/.openclaw/openclaw.json")
+                if eff_cfg and os.path.isfile(oc_config_path):
+                    with open(oc_config_path) as f:
+                        oc = json.load(f)
+                    changed = False
+
+                    # Memory compaction
+                    if "recentTurnsPreserve" in eff_cfg:
+                        oc.setdefault("agents", {}).setdefault("defaults", {}).setdefault("compaction", {})["recentTurnsPreserve"] = int(eff_cfg["recentTurnsPreserve"])
+                        changed = True
+                    if "compactionMode" in eff_cfg:
+                        oc.setdefault("agents", {}).setdefault("defaults", {}).setdefault("compaction", {})["mode"] = eff_cfg["compactionMode"]
+                        changed = True
+
+                    # Context window / max tokens
+                    if "maxTokens" in eff_cfg:
+                        for provider in oc.get("models", {}).get("providers", {}).values():
+                            for m in provider.get("models", []):
+                                m["maxTokens"] = int(eff_cfg["maxTokens"])
+                        changed = True
+
+                    if changed:
+                        with open(oc_config_path, "w") as f:
+                            json.dump(oc, f, indent=2)
+                        logger.info("Agent config applied for %s: %s", base_id, list(eff_cfg.keys()))
+
+                    # Language preference: inject at end of SOUL.md
+                    lang = eff_cfg.get("language", "")
+                    if lang:
+                        soul_path = os.path.join(WORKSPACE, "SOUL.md")
+                        if os.path.isfile(soul_path):
+                            lang_note = f"\n\n<!-- LANGUAGE PREFERENCE -->\nAlways respond in **{lang}** unless the user explicitly writes in a different language."
+                            with open(soul_path, "a") as f:
+                                f.write(lang_note)
+                            logger.info("Language preference injected: %s", lang)
+
+            # --- Knowledge Base injection ---
+            # Inject position/employee KB documents into workspace/knowledge/
+            kb_cfg_resp = table.get_item(Key={"PK": "ORG#acme", "SK": "CONFIG#kb-assignments"})
+            if "Item" in kb_cfg_resp:
+                kb_cfg = kb_cfg_resp["Item"]
+                kb_ids = set()
+                for pid in ([pos_id] if pos_id else []):
+                    kb_ids.update(kb_cfg.get("positionKBs", {}).get(pid, []))
+                kb_ids.update(kb_cfg.get("employeeKBs", {}).get(base_id, []))
+
+                if kb_ids:
+                    import boto3 as _b3kb
+                    s3_kb = _b3kb.client("s3")
+                    kb_dir = os.path.join(WORKSPACE, "knowledge")
+                    os.makedirs(kb_dir, exist_ok=True)
+                    kb_soul_lines = []
+                    for kb_id in kb_ids:
+                        try:
+                            kb_item = table.get_item(Key={"PK": "ORG#acme", "SK": f"KB#{kb_id}"}).get("Item")
+                            if not kb_item:
+                                continue
+                            # Download KB files into workspace/knowledge/{kb_id}/
+                            kb_sub = os.path.join(kb_dir, kb_id)
+                            os.makedirs(kb_sub, exist_ok=True)
+                            for file_ref in kb_item.get("files", []):
+                                s3_key = file_ref.get("s3Key", "")
+                                fname = file_ref.get("filename", s3_key.split("/")[-1])
+                                local_path = os.path.join(kb_sub, fname)
+                                if not os.path.isfile(local_path):
+                                    obj = s3_kb.get_object(Bucket=S3_BUCKET, Key=s3_key)
+                                    with open(local_path, "wb") as f:
+                                        f.write(obj["Body"].read())
+                            kb_soul_lines.append(f"- **{kb_item.get('name', kb_id)}**: {os.path.join(kb_sub, '')}")
+                            logger.info("KB injected: %s → %s", kb_id, kb_sub)
+                        except Exception as ke:
+                            logger.warning("KB injection failed for %s: %s", kb_id, ke)
+
+                    # Append KB paths to SOUL.md so agent knows where to look
+                    if kb_soul_lines:
+                        soul_path = os.path.join(WORKSPACE, "SOUL.md")
+                        if os.path.isfile(soul_path):
+                            kb_block = "\n\n<!-- KNOWLEDGE BASES -->\nYou have access to the following knowledge base documents in your workspace:\n" + "\n".join(kb_soul_lines) + "\nUse the `file` tool to read these documents when relevant to the user's question."
+                            with open(soul_path, "a") as f:
+                                f.write(kb_block)
+
         except Exception as e:
-            logger.warning("Dynamic model config failed (non-fatal): %s", e)
+            logger.warning("Dynamic agent config failed (non-fatal): %s", e)
 
         _assembled_tenants.add(tenant_id)
         logger.info("Workspace ready for tenant %s", tenant_id)

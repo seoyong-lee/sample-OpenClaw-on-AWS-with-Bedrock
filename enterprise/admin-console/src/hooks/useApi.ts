@@ -288,7 +288,7 @@ export function useModelConfig() {
   return useQuery<{
     default: { modelId: string; modelName: string; inputRate: number; outputRate: number };
     fallback: { modelId: string; modelName: string; inputRate: number; outputRate: number };
-    positionOverrides: Record<string, { modelId: string; modelName: string; inputRate: number; outputRate: number; reason: string }>;
+    positionOverrides: Record<string, any>; employeeOverrides: Record<string, any>;
     availableModels: { modelId: string; modelName: string; inputRate: number; outputRate: number; enabled: boolean }[];
   }>({
     queryKey: ['model-config'],
@@ -800,5 +800,82 @@ export function useDeletePositionRuntime() {
   return useMutation({
     mutationFn: (posId: string) => api.del(`/security/positions/${posId}/runtime`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['position-runtime-map'] }),
+  });
+}
+
+// ── Employee model override ────────────────────────────────────────────────────
+
+export function useSetEmployeeModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ empId, modelId, modelName, inputRate, outputRate, reason }: {
+      empId: string; modelId: string; modelName: string;
+      inputRate: number; outputRate: number; reason?: string;
+    }) => api.put(`/settings/model/employee/${empId}`, { modelId, modelName, inputRate, outputRate, reason }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['model-config'] }),
+  });
+}
+
+export function useRemoveEmployeeModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (empId: string) => api.del(`/settings/model/employee/${empId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['model-config'] }),
+  });
+}
+
+// ── Agent config (compaction, context, language) ───────────────────────────────
+
+export function useAgentConfig() {
+  return useQuery<{ positionConfig: Record<string, any>; employeeConfig: Record<string, any> }>({
+    queryKey: ['agent-config'],
+    queryFn: () => api.get('/settings/agent-config'),
+    staleTime: 30_000,
+  });
+}
+
+export function useSetPositionAgentConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ posId, config }: { posId: string; config: Record<string, any> }) =>
+      api.put(`/settings/agent-config/position/${posId}`, config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-config'] }),
+  });
+}
+
+export function useSetEmployeeAgentConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ empId, config }: { empId: string; config: Record<string, any> }) =>
+      api.put(`/settings/agent-config/employee/${empId}`, config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['agent-config'] }),
+  });
+}
+
+// ── KB Assignments ─────────────────────────────────────────────────────────────
+
+export function useKBAssignments() {
+  return useQuery<{ positionKBs: Record<string, string[]>; employeeKBs: Record<string, string[]> }>({
+    queryKey: ['kb-assignments'],
+    queryFn: () => api.get('/settings/kb-assignments'),
+    staleTime: 30_000,
+  });
+}
+
+export function useSetPositionKBs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ posId, kbIds }: { posId: string; kbIds: string[] }) =>
+      api.put(`/settings/kb-assignments/position/${posId}`, { kbIds }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kb-assignments'] }),
+  });
+}
+
+export function useSetEmployeeKBs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ empId, kbIds }: { empId: string; kbIds: string[] }) =>
+      api.put(`/settings/kb-assignments/employee/${empId}`, { kbIds }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['kb-assignments'] }),
   });
 }

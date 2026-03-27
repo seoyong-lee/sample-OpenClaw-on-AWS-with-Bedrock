@@ -655,7 +655,7 @@ function LLMProviderTab({ positions }: { positions: any[] }) {
           <div className="space-y-4">
             {showModal === 'override' && (
               <Select label="Position" value={overridePosId} onChange={setOverridePosId}
-                options={positions.filter(p => !m.positionOverrides[p.id]).map(p => ({ label: p.name, value: p.id }))}
+                options={positions.filter(p => !(m?.positionOverrides as any)?.[p.id]).map(p => ({ label: p.name, value: p.id }))}
                 placeholder="Select position" />
             )}
             <Select label="Model" value={selectedModelId} onChange={setSelectedModelId} options={modelOptions} placeholder="Select model" />

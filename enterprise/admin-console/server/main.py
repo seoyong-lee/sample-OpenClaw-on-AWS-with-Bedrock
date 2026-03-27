@@ -3167,6 +3167,97 @@ def remove_position_model(pos_id: str):
     db.set_config("model", config)
     return config["positionOverrides"]
 
+@app.put("/api/v1/settings/model/employee/{emp_id}")
+def set_employee_model(emp_id: str, body: dict, authorization: str = Header(default="")):
+    """Set a per-employee model override — highest priority, overrides position and global."""
+    _require_role(authorization, roles=["admin"])
+    config = _get_model_config()
+    config.setdefault("employeeOverrides", {})[emp_id] = body
+    db.set_config("model", config)
+    return config["employeeOverrides"]
+
+@app.delete("/api/v1/settings/model/employee/{emp_id}")
+def remove_employee_model(emp_id: str, authorization: str = Header(default="")):
+    _require_role(authorization, roles=["admin"])
+    config = _get_model_config()
+    config.get("employeeOverrides", {}).pop(emp_id, None)
+    db.set_config("model", config)
+    return config.get("employeeOverrides", {})
+
+# ── Agent Config (compaction, context window, language) ────────────────────────
+
+def _get_agent_config() -> dict:
+    cfg = db.get_config("agent-config")
+    if not cfg:
+        return {"positionConfig": {}, "employeeConfig": {}}
+    return cfg
+
+@app.get("/api/v1/settings/agent-config")
+def get_agent_config(authorization: str = Header(default="")):
+    _require_role(authorization, roles=["admin"])
+    return _get_agent_config()
+
+@app.put("/api/v1/settings/agent-config/position/{pos_id}")
+def set_position_agent_config(pos_id: str, body: dict, authorization: str = Header(default="")):
+    """Set position-level agent config: recentTurnsPreserve, compactionMode, maxTokens, language."""
+    _require_role(authorization, roles=["admin"])
+    cfg = _get_agent_config()
+    cfg.setdefault("positionConfig", {})[pos_id] = body
+    db.set_config("agent-config", cfg)
+    return cfg["positionConfig"][pos_id]
+
+@app.delete("/api/v1/settings/agent-config/position/{pos_id}")
+def delete_position_agent_config(pos_id: str, authorization: str = Header(default="")):
+    _require_role(authorization, roles=["admin"])
+    cfg = _get_agent_config()
+    cfg.get("positionConfig", {}).pop(pos_id, None)
+    db.set_config("agent-config", cfg)
+    return {"deleted": pos_id}
+
+@app.put("/api/v1/settings/agent-config/employee/{emp_id}")
+def set_employee_agent_config(emp_id: str, body: dict, authorization: str = Header(default="")):
+    _require_role(authorization, roles=["admin"])
+    cfg = _get_agent_config()
+    cfg.setdefault("employeeConfig", {})[emp_id] = body
+    db.set_config("agent-config", cfg)
+    return cfg["employeeConfig"][emp_id]
+
+@app.delete("/api/v1/settings/agent-config/employee/{emp_id}")
+def delete_employee_agent_config(emp_id: str, authorization: str = Header(default="")):
+    _require_role(authorization, roles=["admin"])
+    cfg = _get_agent_config()
+    cfg.get("employeeConfig", {}).pop(emp_id, None)
+    db.set_config("agent-config", cfg)
+    return {"deleted": emp_id}
+
+# ── KB Assignments ─────────────────────────────────────────────────────────────
+
+def _get_kb_assignments() -> dict:
+    cfg = db.get_config("kb-assignments")
+    return cfg if cfg else {"positionKBs": {}, "employeeKBs": {}}
+
+@app.get("/api/v1/settings/kb-assignments")
+def get_kb_assignments(authorization: str = Header(default="")):
+    _require_role(authorization, roles=["admin"])
+    return _get_kb_assignments()
+
+@app.put("/api/v1/settings/kb-assignments/position/{pos_id}")
+def set_position_kbs(pos_id: str, body: dict, authorization: str = Header(default="")):
+    """Assign knowledge bases to a position. kbIds: list of KB IDs."""
+    _require_role(authorization, roles=["admin"])
+    cfg = _get_kb_assignments()
+    cfg.setdefault("positionKBs", {})[pos_id] = body.get("kbIds", [])
+    db.set_config("kb-assignments", cfg)
+    return cfg["positionKBs"][pos_id]
+
+@app.put("/api/v1/settings/kb-assignments/employee/{emp_id}")
+def set_employee_kbs(emp_id: str, body: dict, authorization: str = Header(default="")):
+    _require_role(authorization, roles=["admin"])
+    cfg = _get_kb_assignments()
+    cfg.setdefault("employeeKBs", {})[emp_id] = body.get("kbIds", [])
+    db.set_config("kb-assignments", cfg)
+    return cfg["employeeKBs"][emp_id]
+
 @app.get("/api/v1/settings/security")
 def get_security_config():
     return _get_security_config()
