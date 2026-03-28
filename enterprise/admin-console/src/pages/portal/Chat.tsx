@@ -97,6 +97,13 @@ export default function PortalChat() {
   const [warm, setWarm] = useState(() => isAgentWarm(userId));
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Mark always-on agents as warm immediately (no cold start)
+  useEffect(() => {
+    api.get<any>('/portal/profile').then(data => {
+      if (data?.isAlwaysOn) { setWarm(true); markAgentWarm(userId); }
+    }).catch(() => {});
+  }, [userId]);
+
   useEffect(() => { saveMessages(userId, messages); }, [messages, userId]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -211,6 +218,7 @@ export default function PortalChat() {
                 {msg.role === 'user' && '✓ '}
                 {new Date(msg.timestamp).toLocaleTimeString()}
                 {msg.source === 'agentcore' && ' · AgentCore'}
+                {msg.source === 'always-on' && ' · Always-on'}
                 {msg.model && ` · ${msg.model.split('/').pop()?.split(':')[0] || ''}`}
               </p>
             </div>
@@ -257,7 +265,7 @@ export default function PortalChat() {
         </div>
         <div className="flex items-center justify-between mt-2">
           <p className="text-[10px] text-text-muted">Press Enter to send</p>
-          <p className="text-[10px] text-text-muted">Powered by AWS Bedrock via AgentCore</p>
+          <p className="text-[10px] text-text-muted">Powered by AWS Bedrock{warm && ' · Always-on'}</p>
         </div>
       </div>
     </div>

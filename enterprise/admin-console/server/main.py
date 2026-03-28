@@ -1872,11 +1872,22 @@ def portal_chat(body: PortalChatMessage, authorization: str = Header(default="")
                 "status": "success",
             })
 
+            # Detect if response came from always-on container vs AgentCore Runtime
+            stack = os.environ.get("STACK_NAME", "openclaw-multitenancy")
+            source = "agentcore"
+            try:
+                _ssm_src = _boto3_main.client("ssm", region_name=_GATEWAY_REGION)
+                _ssm_src.get_parameter(
+                    Name=f"/openclaw/{stack}/tenants/{user.employee_id}/always-on-agent")
+                source = "always-on"
+            except Exception:
+                pass
+
             return {
                 "response": reply,
                 "agentId": my_binding.get("agentId"),
                 "agentName": my_binding.get("agentName"),
-                "source": "agentcore",
+                "source": source,
                 "model": agent_response.get("model", "") if isinstance(agent_response, dict) else "",
             }
         else:
@@ -1919,6 +1930,16 @@ def portal_profile(authorization: str = Header(default="")):
     # Return first 2KB of MEMORY.md so portal can show "what agent remembers"
     memory_preview = memory_md[:2048] if memory_md else None
 
+    # Check if employee has always-on container running
+    stack = os.environ.get("STACK_NAME", "openclaw-multitenancy")
+    is_always_on = False
+    try:
+        ssm_ao = _boto3_main.client("ssm", region_name=_GATEWAY_REGION)
+        ssm_ao.get_parameter(Name=f"/openclaw/{stack}/tenants/{user.employee_id}/always-on-agent")
+        is_always_on = True
+    except Exception:
+        pass
+
     return {
         "employee": emp,
         "agent": agent,
@@ -1926,6 +1947,7 @@ def portal_profile(authorization: str = Header(default="")):
         "memoryMdSize": len(memory_md),
         "dailyMemoryCount": len(s3ops.list_files(f"{user.employee_id}/workspace/memory/")),
         "memoryPreview": memory_preview,
+        "isAlwaysOn": is_always_on,
     }
 
 
