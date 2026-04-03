@@ -63,6 +63,7 @@ CREATE_VPC_ENDPOINTS="${CREATE_VPC_ENDPOINTS:-false}"
 ALLOWED_SSH_CIDR="${ALLOWED_SSH_CIDR:-127.0.0.1/32}"
 DYNAMODB_TABLE="${DYNAMODB_TABLE:-openclaw-enterprise}"
 DYNAMODB_REGION="${DYNAMODB_REGION:-us-east-2}"
+WORKSPACE_BUCKET_NAME="${WORKSPACE_BUCKET_NAME:-}"
 SKIP_DOCKER_BUILD="${SKIP_DOCKER_BUILD:-false}"
 SKIP_SEED="${SKIP_SEED:-false}"
 
@@ -125,7 +126,8 @@ fi
 # ── Step 2: CloudFormation ────────────────────────────────────────────────────
 info "[2/7] Deploying CloudFormation stack..."
 
-CFN_PARAMS="ParameterKey=OpenClawModel,ParameterValue=${MODEL}"
+CFN_PARAMS="ParameterKey=WorkspaceBucketName,ParameterValue=${WORKSPACE_BUCKET_NAME}"
+CFN_PARAMS="$CFN_PARAMS ParameterKey=OpenClawModel,ParameterValue=${MODEL}"
 CFN_PARAMS="$CFN_PARAMS ParameterKey=InstanceType,ParameterValue=${INSTANCE_TYPE}"
 CFN_PARAMS="$CFN_PARAMS ParameterKey=KeyPairName,ParameterValue=${KEY_PAIR}"
 CFN_PARAMS="$CFN_PARAMS ParameterKey=AllowedSSHCIDR,ParameterValue=${ALLOWED_SSH_CIDR}"
@@ -176,6 +178,16 @@ success "Stack ready — EC2: $INSTANCE_ID | S3: $S3_BUCKET"
 # ── Step 3: Build and push Docker image ───────────────────────────────────────
 if [ "$SKIP_DOCKER_BUILD" = "true" ]; then
   info "[3/7] Skipping Docker build (--skip-build)"
+  # If the target ECR repo is empty, copy image from the most recent existing repo
+  IMAGE_COUNT=$(aws ecr describe-images --repository-name "${STACK_NAME}-multitenancy-agent" \
+    --region "$REGION" --query 'length(imageDetails)' --output text 2>/dev/null || echo "0")
+  if [ "$IMAGE_COUNT" = "0" ] || [ -z "$IMAGE_COUNT" ]; then
+    warn "  ECR repo ${ECR_URI} is empty."
+    warn "  Run without --skip-build to build and push a new image, or push manually:"
+    warn "    docker tag <existing-image> ${ECR_URI}:latest && docker push ${ECR_URI}:latest"
+  else
+    success "  ECR repo has $IMAGE_COUNT image(s)"
+  fi
 else
   info "[3/7] Building and pushing Agent Container (~10-15 min)..."
   aws ecr get-login-password --region "$REGION" | \

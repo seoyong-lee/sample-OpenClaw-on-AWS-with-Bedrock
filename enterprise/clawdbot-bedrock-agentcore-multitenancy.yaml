@@ -69,6 +69,11 @@ Parameters:
     Default: "0.0.0.0/0"
     Description: "CIDR for SSH access (recommend SSM Session Manager, set to 127.0.0.1/32 to disable SSH)"
 
+  WorkspaceBucketName:
+    Type: String
+    Default: ""
+    Description: "Custom S3 bucket name for tenant workspaces. Leave empty to auto-generate (openclaw-tenants-ACCOUNTID). Set a custom name when deploying multiple stacks in the same account."
+
   ExistingVpcId:
     Type: String
     Default: ""
@@ -122,6 +127,7 @@ Conditions:
   # When ExistingVpcId is empty, create a new VPC and subnets.
   # When provided, reuse the existing VPC/subnet and skip network resource creation.
   CreateNewVPC: !Equals [!Ref ExistingVpcId, ""]
+  HasCustomBucketName: !Not [!Equals [!Ref WorkspaceBucketName, ""]]
   CreateEndpoints: !Equals [!Ref CreateVPCEndpoints, "true"]
   AllowSSH: !Not [!Equals [!Ref AllowedSSHCIDR, "127.0.0.1/32"]]
   HasKeyPair: !Not [!Equals [!Ref KeyPairName, ""]]
@@ -514,7 +520,10 @@ Resources:
   TenantWorkspaceBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "openclaw-tenants-${AWS::AccountId}"
+      BucketName: !If
+        - HasCustomBucketName
+        - !Ref WorkspaceBucketName
+        - !Sub "openclaw-tenants-${AWS::AccountId}"
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
