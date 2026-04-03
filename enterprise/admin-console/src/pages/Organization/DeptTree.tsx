@@ -311,61 +311,55 @@ export default function DeptTree() {
       )}
 
       {/* Create Department Modal */}
-      {showCreate && (
-        <Modal title="Create Department" onClose={() => setShowCreate(false)} footer={
-          <><Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
-          <Button variant="primary" onClick={handleCreate} disabled={!formName.trim() || createDept.isPending}>
-            {createDept.isPending ? 'Creating…' : 'Create'}
-          </Button></>
-        }>
-          <div className="space-y-4">
-            <Input label="Name" value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g. Platform Team" autoFocus />
-            <Select label="Parent Department" value={formParent} onChange={e => setFormParent(e.target.value)} options={parentOptions} />
-            <Input label="Headcount" type="number" value={formHeadCount} onChange={e => setFormHeadCount(e.target.value)} placeholder="0" />
-          </div>
-        </Modal>
-      )}
+      <Modal open={showCreate} title="Create Department" onClose={() => setShowCreate(false)} footer={
+        <><Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
+        <Button variant="primary" onClick={handleCreate} disabled={!formName.trim() || createDept.isPending}>
+          {createDept.isPending ? 'Creating…' : 'Create'}
+        </Button></>
+      }>
+        <div className="space-y-4">
+          <Input label="Name" value={formName} onChange={v => setFormName(v)} placeholder="e.g. Platform Team" />
+          <Select label="Parent Department" value={formParent} onChange={v => setFormParent(v)} options={parentOptions} />
+          <Input label="Headcount" type="number" value={formHeadCount} onChange={v => setFormHeadCount(v)} placeholder="0" />
+        </div>
+      </Modal>
 
       {/* Edit Department Modal */}
-      {editing && (
-        <Modal title={`Edit: ${editing.name}`} onClose={() => setEditing(null)} footer={
-          <><Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-          <Button variant="primary" onClick={handleEdit} disabled={!formName.trim() || updateDept.isPending}>
-            {updateDept.isPending ? 'Saving…' : 'Save'}
-          </Button></>
-        }>
-          <div className="space-y-4">
-            <Input label="Name" value={formName} onChange={e => setFormName(e.target.value)} autoFocus />
-            <Select label="Parent Department" value={formParent} onChange={e => setFormParent(e.target.value)}
-              options={parentOptions.filter(o => o.value !== editing.id)} />
-            <Input label="Headcount" type="number" value={formHeadCount} onChange={e => setFormHeadCount(e.target.value)} />
-          </div>
-        </Modal>
-      )}
+      <Modal open={!!editing} title={editing ? `Edit: ${editing.name}` : ''} onClose={() => setEditing(null)} footer={
+        <><Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+        <Button variant="primary" onClick={handleEdit} disabled={!formName.trim() || updateDept.isPending}>
+          {updateDept.isPending ? 'Saving…' : 'Save'}
+        </Button></>
+      }>
+        <div className="space-y-4">
+          <Input label="Name" value={formName} onChange={v => setFormName(v)} />
+          <Select label="Parent Department" value={formParent} onChange={v => setFormParent(v)}
+            options={parentOptions.filter(o => !editing || o.value !== editing.id)} />
+          <Input label="Headcount" type="number" value={formHeadCount} onChange={v => setFormHeadCount(v)} />
+        </div>
+      </Modal>
 
       {/* Delete Department Modal */}
-      {deleting && (
-        <Modal title="Delete Department" onClose={() => setDeleting(null)} footer={
-          <><Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
-          <Button variant="danger" onClick={handleDelete} disabled={deleteDept.isPending || !!deleteError}>
-            {deleteDept.isPending ? 'Deleting…' : 'Delete'}
-          </Button></>
-        }>
-          <div className="space-y-3">
-            <p className="text-sm text-text-primary">
-              Are you sure you want to delete <strong>{deleting.name}</strong>?
-            </p>
-            {deleteError ? (
-              <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5">
-                <AlertTriangle size={16} className="text-danger mt-0.5 shrink-0" />
-                <p className="text-sm text-danger">{deleteError}</p>
-              </div>
-            ) : (
-              <p className="text-xs text-text-muted">This cannot be undone. Employees and sub-departments must be reassigned first.</p>
-            )}
-          </div>
-        </Modal>
-      )}
+      <Modal open={!!deleting} title="Delete Department" onClose={() => setDeleting(null)} footer={
+        <><Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
+        <Button variant="danger" onClick={handleDelete} disabled={deleteDept.isPending || !!deleteError}>
+          {deleteDept.isPending ? 'Deleting…' : 'Delete'}
+        </Button></>
+      }>
+        <div className="space-y-3">
+          <p className="text-sm text-text-primary">
+            Are you sure you want to delete <strong>{deleting?.name}</strong>?
+          </p>
+          {deleteError ? (
+            <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5">
+              <AlertTriangle size={16} className="text-danger mt-0.5 shrink-0" />
+              <p className="text-sm text-danger">{deleteError}</p>
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">This cannot be undone. Employees and sub-departments must be reassigned first.</p>
+          )}
+        </div>
+      </Modal>
 
       {/* Department Detail Drawer */}
       {sel && (

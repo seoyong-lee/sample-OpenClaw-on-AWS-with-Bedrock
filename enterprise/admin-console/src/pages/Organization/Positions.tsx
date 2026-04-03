@@ -182,54 +182,52 @@ export default function Positions() {
       </Modal>
 
       {/* Edit Position Modal */}
-      {editingPos && (
-        <Modal title={`Edit: ${editingPos.name}`} onClose={() => setEditingPos(null)} footer={
-          <><Button variant="ghost" onClick={() => setEditingPos(null)}>Cancel</Button>
-          <Button variant="primary" disabled={updatePosition.isPending} onClick={() => {
-            const dept = DEPARTMENTS.find(d => d.id === editingPos.departmentId);
-            updatePosition.mutate({ id: editingPos.id, name: editingPos.name, departmentId: editingPos.departmentId,
-              departmentName: dept?.name || editingPos.departmentName, defaultChannel: editingPos.defaultChannel,
-              defaultSkills: editingPos.defaultSkills, toolAllowlist: editingPos.toolAllowlist, soulTemplate: editingPos.soulTemplate },
-              { onSuccess: () => setEditingPos(null) });
-          }}>{updatePosition.isPending ? 'Saving…' : 'Save'}</Button></>
-        }>
-          <div className="space-y-4">
-            <Input label="Name" value={editingPos.name} onChange={e => setEditingPos({ ...editingPos, name: e.target.value })} autoFocus />
-            <Select label="Department" value={editingPos.departmentId} onChange={v => {
-              const dept = DEPARTMENTS.find(d => d.id === v);
-              setEditingPos({ ...editingPos, departmentId: v, departmentName: dept?.name || '' });
-            }} options={DEPARTMENTS.filter(d => !d.parentId).map(d => ({ label: d.name, value: d.id }))} />
-            <Select label="Default Channel" value={editingPos.defaultChannel || 'slack'} onChange={v => setEditingPos({ ...editingPos, defaultChannel: v as any })}
-              options={[{label:'Slack',value:'slack'},{label:'Telegram',value:'telegram'},{label:'Discord',value:'discord'},{label:'WhatsApp',value:'whatsapp'}]} />
-          </div>
-        </Modal>
-      )}
+      <Modal open={!!editingPos} title={editingPos ? `Edit: ${editingPos.name}` : ''} onClose={() => setEditingPos(null)} footer={
+        <><Button variant="ghost" onClick={() => setEditingPos(null)}>Cancel</Button>
+        <Button variant="primary" disabled={updatePosition.isPending} onClick={() => {
+          if (!editingPos) return;
+          const dept = DEPARTMENTS.find(d => d.id === editingPos.departmentId);
+          updatePosition.mutate({ id: editingPos.id, name: editingPos.name, departmentId: editingPos.departmentId,
+            departmentName: dept?.name || editingPos.departmentName, defaultChannel: editingPos.defaultChannel,
+            defaultSkills: editingPos.defaultSkills, toolAllowlist: editingPos.toolAllowlist, soulTemplate: editingPos.soulTemplate },
+            { onSuccess: () => setEditingPos(null) });
+        }}>{updatePosition.isPending ? 'Saving…' : 'Save'}</Button></>
+      }>
+        {editingPos && <div className="space-y-4">
+          <Input label="Name" value={editingPos.name} onChange={v => setEditingPos({ ...editingPos, name: v })} />
+          <Select label="Department" value={editingPos.departmentId} onChange={v => {
+            const dept = DEPARTMENTS.find(d => d.id === v);
+            setEditingPos({ ...editingPos, departmentId: v, departmentName: dept?.name || '' });
+          }} options={DEPARTMENTS.filter(d => !d.parentId).map(d => ({ label: d.name, value: d.id }))} />
+          <Select label="Default Channel" value={editingPos.defaultChannel || 'slack'} onChange={v => setEditingPos({ ...editingPos, defaultChannel: v as any })}
+            options={[{label:'Slack',value:'slack'},{label:'Telegram',value:'telegram'},{label:'Discord',value:'discord'},{label:'WhatsApp',value:'whatsapp'}]} />
+        </div>}
+      </Modal>
 
       {/* Delete Position Modal */}
-      {deletingPos && (
-        <Modal title="Delete Position" onClose={() => setDeletingPos(null)} footer={
-          <><Button variant="ghost" onClick={() => setDeletingPos(null)}>Cancel</Button>
-          <Button variant="danger" disabled={deletePosition.isPending || !!deleteError} onClick={() => {
-            setDeleteError('');
-            deletePosition.mutate(deletingPos.id, {
-              onSuccess: () => setDeletingPos(null),
-              onError: (err: any) => setDeleteError(err?.response?.data?.message || err?.message || 'Delete failed'),
-            });
-          }}>{deletePosition.isPending ? 'Deleting…' : 'Delete'}</Button></>
-        }>
-          <div className="space-y-3">
-            <p className="text-sm text-text-primary">Delete position <strong>{deletingPos.name}</strong>?</p>
-            {deleteError ? (
-              <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5">
-                <AlertTriangle size={16} className="text-danger mt-0.5 shrink-0" />
-                <p className="text-sm text-danger">{deleteError}</p>
-              </div>
-            ) : (
-              <p className="text-xs text-text-muted">All employees must be reassigned to another position first.</p>
-            )}
-          </div>
-        </Modal>
-      )}
+      <Modal open={!!deletingPos} title="Delete Position" onClose={() => setDeletingPos(null)} footer={
+        <><Button variant="ghost" onClick={() => setDeletingPos(null)}>Cancel</Button>
+        <Button variant="danger" disabled={deletePosition.isPending || !!deleteError} onClick={() => {
+          if (!deletingPos) return;
+          setDeleteError('');
+          deletePosition.mutate(deletingPos.id, {
+            onSuccess: () => setDeletingPos(null),
+            onError: (err: any) => setDeleteError(err?.response?.data?.message || err?.message || 'Delete failed'),
+          });
+        }}>{deletePosition.isPending ? 'Deleting…' : 'Delete'}</Button></>
+      }>
+        <div className="space-y-3">
+          <p className="text-sm text-text-primary">Delete position <strong>{deletingPos?.name}</strong>?</p>
+          {deleteError ? (
+            <div className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5">
+              <AlertTriangle size={16} className="text-danger mt-0.5 shrink-0" />
+              <p className="text-sm text-danger">{deleteError}</p>
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">All employees must be reassigned to another position first.</p>
+          )}
+        </div>
+      </Modal>
 
       {/* Create Modal */}
       <Modal
