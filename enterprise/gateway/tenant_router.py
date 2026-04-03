@@ -504,21 +504,24 @@ class TenantRouterHandler(BaseHTTPRequestHandler):
             self._respond(400, {"error": "message required"})
             return
 
-        # Derive tenant and route.
-        # For IM channels (feishu, telegram, discord etc.), user_id may be a platform ID
-        # (e.g. Feishu OU ID). Resolve to emp_id via DynamoDB MAPPING# so that routing
-        # uses the employee's position and runtime config correctly.
+        # Resolve IM channel user IDs (Feishu OU IDs, Discord numeric IDs, etc.) to emp_id.
         resolved_emp_id = _resolve_emp_id(user_id, channel)
-        routing_id = resolved_emp_id if resolved_emp_id else user_id
 
         try:
-            tenant_id = derive_tenant_id(channel, user_id)
+            if resolved_emp_id:
+                # Employee-scoped session: all channels for the same employee share ONE
+                # AgentCore session, just like standard OpenClaw Gateway manages multiple
+                # channels in a single process. This eliminates cross-channel MEMORY.md
+                # write conflicts and preserves natural cross-channel context — no changes
+                # to OpenClaw required.
+                tenant_id = derive_tenant_id("emp", resolved_emp_id)
+            else:
+                # Fallback for users not yet in DynamoDB user-mapping (e.g. new users
+                # before pairing, or admin test accounts).
+                tenant_id = derive_tenant_id(channel, user_id)
         except ValueError as e:
             self._respond(400, {"error": str(e)})
             return
-
-        # Resolve runtime using the resolved emp_id (fixes IM channel routing to correct tier)
-        runtime_id = _get_runtime_id_for_tenant(routing_id) or RUNTIME_ID
 
         try:
             # Check if this routes to an always-on Docker container
